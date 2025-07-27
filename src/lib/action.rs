@@ -1,5 +1,18 @@
 use crate::{todo::Todo, Todos};
-use std::io::{self, stdout, Write};
+use std::{
+    error::Error,
+    fmt,
+    io::{self, stdout, Write},
+    num::ParseIntError,
+};
+
+/*
+    Open Points:
+    - Saving to File
+    - Loading from File
+    - Platform handling for screen clearing
+    - Nicer display for TODOs
+*/
 
 pub enum Action {
     Create,
@@ -37,6 +50,46 @@ impl From<String> for Action {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ApplicationError(pub String);
+
+impl Error for ApplicationError {}
+
+impl fmt::Display for ApplicationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "An Error occurred: {}", self.0)
+    }
+}
+
+impl From<std::io::Error> for ApplicationError {
+    fn from(val: std::io::Error) -> Self {
+        Self { 0: val.to_string() }
+    }
+}
+
+impl From<ParseIntError> for ApplicationError {
+    fn from(val: ParseIntError) -> Self {
+        Self { 0: val.to_string() }
+    }
+}
+
+impl From<SelectionError> for ApplicationError {
+    fn from(val: SelectionError) -> Self {
+        Self { 0: val.0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectionError(pub String);
+
+impl Error for SelectionError {}
+
+impl fmt::Display for SelectionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid selection: {}", self.0)
+    }
+}
+
 #[cfg(not(test))]
 fn action_sleep() {
     use core::time;
@@ -70,7 +123,7 @@ fn print_input_label(label: &str) {
     let _ = stdout().flush(); // This is necessary, otherwise the text appears after the next println
 }
 
-fn list_todos_internal<F>(todos: Todos, mut get_input: F)
+fn list_todos_internal<F>(todos: Todos, mut get_input: F) -> Result<(), ApplicationError>
 where
     F: FnMut() -> Result<String, std::io::Error>,
 {
@@ -81,37 +134,32 @@ where
 
     println!();
     println!("Press enter key to return");
-    let _ = get_input();
+    let _ = get_input()?;
+    Ok(())
 }
-pub fn list_todos(todos: Todos) {
-    list_todos_internal(todos, get_input);
+pub fn list_todos(todos: Todos) -> Result<(), ApplicationError> {
+    list_todos_internal(todos, get_input)
 }
 
-fn create_todo_internal<F>(todos: Todos, mut get_input: F)
+fn create_todo_internal<F>(todos: Todos, mut get_input: F) -> Result<(), ApplicationError>
 where
     F: FnMut() -> Result<String, std::io::Error>,
 {
     print_input_label("Enter new TODO: ");
-    let input = match get_input() {
-        Ok(input) => input,
-        Err(err) => {
-            println!("Error reading input {err}");
-            action_sleep();
-            return;
-        }
-    };
+    let input = get_input()?; // std::io::Error
 
     let new_todo: Todo = Todo::new(input);
     todos.borrow_mut().push(new_todo);
 
     println!("Successfully added new todo!");
     action_sleep();
+    Ok(())
 }
-pub fn create_todo(todos: Todos) {
-    create_todo_internal(todos, get_input);
+pub fn create_todo(todos: Todos) -> Result<(), ApplicationError> {
+    create_todo_internal(todos, get_input)
 }
 
-fn complete_todo_internal<F>(todos: Todos, mut get_input: F)
+fn complete_todo_internal<F>(todos: Todos, mut get_input: F) -> Result<(), ApplicationError>
 where
     F: FnMut() -> Result<String, std::io::Error>,
 {
@@ -127,43 +175,30 @@ where
     println!();
 
     print_input_label("Enter TODO to complete: ");
-    let input = match get_input() {
-        Ok(input) => input,
-        Err(err) => {
-            println!("Error reading input {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let input = get_input()?;
 
-    let number = match input.parse::<usize>() {
-        Ok(num) => num,
-        Err(err) => {
-            println!("Error parsing number: {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let number = input.parse::<usize>()?;
 
     if number == 0 || number > todos.borrow().len() {
-        println!("Invalid number");
-        action_sleep();
-        return;
+        return Err(SelectionError(input).into());
     }
 
     if let Some(todo) = todos.borrow_mut().get_mut(number - 1) {
         todo.completed = true;
         println!("Successfully marked TODO as completed.");
     } else {
-        println!("Failed to mark TODO as completed.");
+        return Err(ApplicationError(
+            "Failed to mark TODO as completed.".to_string(),
+        ));
     }
-    action_sleep();
+    action_sleep(); // TODO
+    return Ok(());
 }
-pub fn complete_todo(todos: Todos) {
-    complete_todo_internal(todos, get_input);
+pub fn complete_todo(todos: Todos) -> Result<(), ApplicationError> {
+    complete_todo_internal(todos, get_input)
 }
 
-fn delete_todo_internal<F>(todos: Todos, mut get_input: F)
+fn delete_todo_internal<F>(todos: Todos, mut get_input: F) -> Result<(), ApplicationError>
 where
     F: FnMut() -> Result<String, std::io::Error>,
 {
@@ -179,39 +214,24 @@ where
     println!();
 
     print_input_label("Enter TODO to complete: ");
-    let input = match get_input() {
-        Ok(input) => input,
-        Err(err) => {
-            println!("Error reading input {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let input = get_input()?;
 
-    let number = match input.parse::<usize>() {
-        Ok(num) => num,
-        Err(err) => {
-            println!("Error parsing number: {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let number = input.parse::<usize>()?;
 
     if number == 0 || number > todos.borrow().len() {
-        println!("Invalid number");
-        action_sleep();
-        return;
+        return Err(SelectionError(input).into());
     }
 
     todos.borrow_mut().swap_remove(number - 1);
     println!("Successfully delete TODO.");
     action_sleep();
+    return Ok(());
 }
-pub fn delete_todo(todos: Todos) {
-    delete_todo_internal(todos, get_input);
+pub fn delete_todo(todos: Todos) -> Result<(), ApplicationError> {
+    delete_todo_internal(todos, get_input)
 }
 
-fn edit_todo_internal<F>(todos: Todos, mut get_input: F)
+fn edit_todo_internal<F>(todos: Todos, mut get_input: F) -> Result<(), ApplicationError>
 where
     F: FnMut() -> Result<String, std::io::Error>,
 {
@@ -227,65 +247,36 @@ where
     println!();
 
     print_input_label("Enter TODO to complete: ");
-    let input = match get_input() {
-        Ok(input) => input,
-        Err(err) => {
-            println!("Error reading input {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let input = get_input()?;
 
-    let number = match input.parse::<usize>() {
-        Ok(num) => num,
-        Err(err) => {
-            println!("Error parsing number: {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let number = input.parse::<usize>()?;
 
     if number == 0 || number > todos.borrow().len() {
-        println!("Invalid number");
-        action_sleep();
-        return;
+        return Err(SelectionError(input).into());
     }
 
     print_input_label("Would you like to edit the [T]ext or toggle the [C]ompleted state? ");
-    let input = match get_input() {
-        Ok(input) => input,
-        Err(err) => {
-            println!("Error reading input {err}, exit.");
-            action_sleep();
-            return;
-        }
-    };
+    let input = get_input()?;
 
     let mut todos_ref = todos.borrow_mut();
     let todo = match todos_ref.get_mut(number - 1) {
         Some(todo) => todo,
         None => {
-            println!("Failed to get TODO");
-            action_sleep();
-            return;
+            // Application Error
+            action_sleep(); // TODO:
+            return Err(ApplicationError("Failed to get TODO".to_string()));
         }
     };
     match input.as_str() {
         "T" | "t" => {
             println!("Current text: {}", todo.text);
             print_input_label("Enter new text: ");
-            let input = match get_input() {
-                Ok(input) => input,
-                Err(err) => {
-                    println!("Error reading input {err}, exit.");
-                    action_sleep();
-                    return;
-                }
-            };
+            let input = get_input()?;
 
             todo.text = input;
             println!("Successfully updated TODO. New text: {}", todo.text);
-            action_sleep();
+            action_sleep(); // TODO
+            return Ok(());
         }
 
         "C" | "c" => {
@@ -295,17 +286,19 @@ where
                 todo.completed
             );
             action_sleep();
-            return;
+            return Ok(());
         }
         _ => {
             println!("Invalid action");
             action_sleep();
         }
     };
+
+    return Ok(());
 }
 
-pub fn edit_todo(todos: Todos) {
-    edit_todo_internal(todos, get_input);
+pub fn edit_todo(todos: Todos) -> Result<(), ApplicationError> {
+    edit_todo_internal(todos, get_input)
 }
 
 #[cfg(test)]

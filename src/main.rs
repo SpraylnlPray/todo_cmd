@@ -4,7 +4,7 @@ use std::{
     process::exit,
     sync::Arc,
 };
-use todolib::{action, action::Action, Todos};
+use todolib::{action::{self, Action, SelectionError}, Todos};
 
 fn main() {
     let todos: Todos = Arc::new(RefCell::new(Vec::new()));
@@ -44,7 +44,7 @@ fn main() {
         };
 
         let action = Action::from(buffer);
-        match action {
+        if let Err(err) = match action {
             Action::Create => action::create_todo(todos.clone()),
             Action::Edit => action::edit_todo(todos.clone()),
             Action::Delete => action::delete_todo(todos.clone()),
@@ -52,11 +52,11 @@ fn main() {
             Action::Complete => action::complete_todo(todos.clone()),
             Action::Exit => {
                 println!("Exiting, Bye!");
-                exit(0);
-            }
-            Action::Invalid => {
-                println!("Invalid action");
-            }
+                std::process::exit(0);
+            },
+            Action::Invalid => Err(SelectionError("Invalid Selection".to_string()).into()),
+        } {
+            println!("{}", err.0)
         }
     }
 }
