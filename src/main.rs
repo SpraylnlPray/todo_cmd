@@ -1,13 +1,14 @@
 use std::{
-    cell::RefCell,
-    io::{self, stdout, Write},
-    process::exit,
-    sync::Arc,
+    cell::RefCell, io::{self, stdout, Write}, process::exit, sync::Arc
 };
-use todolib::{action::{self, Action, SelectionError}, Todos};
+use todolib::{action::{self, Action}, errors::SelectionError, todo::Todo, Todos};
 
 fn main() {
-    let todos: Todos = Arc::new(RefCell::new(Vec::new()));
+    let todos: Todos = Arc::new(RefCell::new(vec![
+        Todo::new("first".to_string()),
+        Todo::new("second".to_string()),
+        Todo::new("third".to_string()),
+    ]));
     loop {
         std::process::Command::new("cmd")
             .args(&["/C", "cls"])
@@ -56,7 +57,8 @@ fn main() {
             },
             Action::Invalid => Err(SelectionError("Invalid Selection".to_string()).into()),
         } {
-            println!("{}", err.0)
+            println!("{}", err.to_string());
+            std::thread::sleep(core::time::Duration::from_secs(1));
         }
     }
 }

@@ -1,8 +1,7 @@
 use std::{cell::RefCell, sync::Arc};
 
-use crate::todo::Todo;
-
 pub mod action;
 pub mod todo;
+pub mod errors;
 
-pub type Todos = Arc<RefCell<Vec<Todo>>>;
+pub type Todos = Arc<RefCell<Vec<todo::Todo>>>;

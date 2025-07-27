@@ -1,10 +1,9 @@
-use crate::{todo::Todo, Todos};
-use std::{
-    error::Error,
-    fmt,
-    io::{self, stdout, Write},
-    num::ParseIntError,
+use crate::{
+    errors::{ApplicationError, SelectionError},
+    todo::Todo,
+    Todos,
 };
+use std::io::{self, stdout, Write};
 
 /*
     Open Points:
@@ -47,46 +46,6 @@ impl From<String> for Action {
             "6" => Action::Exit,
             _ => Action::Invalid,
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ApplicationError(pub String);
-
-impl Error for ApplicationError {}
-
-impl fmt::Display for ApplicationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "An Error occurred: {}", self.0)
-    }
-}
-
-impl From<std::io::Error> for ApplicationError {
-    fn from(val: std::io::Error) -> Self {
-        Self { 0: val.to_string() }
-    }
-}
-
-impl From<ParseIntError> for ApplicationError {
-    fn from(val: ParseIntError) -> Self {
-        Self { 0: val.to_string() }
-    }
-}
-
-impl From<SelectionError> for ApplicationError {
-    fn from(val: SelectionError) -> Self {
-        Self { 0: val.0 }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SelectionError(pub String);
-
-impl Error for SelectionError {}
-
-impl fmt::Display for SelectionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Invalid selection: {}", self.0)
     }
 }
 
@@ -146,7 +105,7 @@ where
     F: FnMut() -> Result<String, std::io::Error>,
 {
     print_input_label("Enter new TODO: ");
-    let input = get_input()?; // std::io::Error
+    let input = get_input()?;
 
     let new_todo: Todo = Todo::new(input);
     todos.borrow_mut().push(new_todo);
@@ -191,7 +150,8 @@ where
             "Failed to mark TODO as completed.".to_string(),
         ));
     }
-    action_sleep(); // TODO
+    
+    action_sleep();
     return Ok(());
 }
 pub fn complete_todo(todos: Todos) -> Result<(), ApplicationError> {
@@ -225,6 +185,7 @@ where
     todos.borrow_mut().swap_remove(number - 1);
     println!("Successfully delete TODO.");
     action_sleep();
+    
     return Ok(());
 }
 pub fn delete_todo(todos: Todos) -> Result<(), ApplicationError> {
@@ -262,8 +223,6 @@ where
     let todo = match todos_ref.get_mut(number - 1) {
         Some(todo) => todo,
         None => {
-            // Application Error
-            action_sleep(); // TODO:
             return Err(ApplicationError("Failed to get TODO".to_string()));
         }
     };
@@ -275,8 +234,6 @@ where
 
             todo.text = input;
             println!("Successfully updated TODO. New text: {}", todo.text);
-            action_sleep(); // TODO
-            return Ok(());
         }
 
         "C" | "c" => {
@@ -285,15 +242,13 @@ where
                 "Successfully toggled completed state. New state: {}",
                 todo.completed
             );
-            action_sleep();
-            return Ok(());
         }
         _ => {
-            println!("Invalid action");
-            action_sleep();
+            return Err(SelectionError("Invalid Selection".to_string()).into());
         }
     };
 
+    action_sleep();
     return Ok(());
 }
 
@@ -305,7 +260,6 @@ pub fn edit_todo(todos: Todos) -> Result<(), ApplicationError> {
 mod tests {
     use std::rc::Rc;
     use std::{cell::RefCell, sync::Arc};
-    // TODO: test error cases when error handling is implemented
     use super::*;
 
     struct MockInputProvider {
@@ -357,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_list_todos() {
-        let mock_inputs = vec![GetInputVal::new(GetInputValType::String, "".to_string())];
+        let mock_inputs = vec![GetInputVal::new(GetInputValType::String, "".to_string()), GetInputVal::new(GetInputValType::Error, "".to_string())];
         let provider = MockInputProvider::new(mock_inputs);
 
         let todos: Todos = Arc::new(RefCell::new(vec![
@@ -366,7 +320,12 @@ mod tests {
             Todo::new("third".to_string()),
         ]));
 
-        list_todos_internal(todos.clone(), provider.get_fn());
+        let res = list_todos_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
+        assert_eq!(todos.borrow().len(), 3);
+
+        let res = list_todos_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err());
         assert_eq!(todos.borrow().len(), 3);
     }
 
@@ -385,18 +344,21 @@ mod tests {
             Todo::new("third".to_string()),
         ]));
 
-        create_todo_internal(todos.clone(), provider.get_fn());
+        let res = create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 4);
         assert_eq!(todos.borrow().get(3).unwrap().completed, false);
         assert_eq!(todos.borrow().get(3).unwrap().text, "Foo");
+        assert!(res.is_ok());
 
-        create_todo_internal(todos.clone(), provider.get_fn());
+        let res = create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 5);
         assert_eq!(todos.borrow().get(4).unwrap().completed, false);
         assert_eq!(todos.borrow().get(4).unwrap().text, "Bar");
+        assert!(res.is_ok());
 
-        create_todo_internal(todos.clone(), provider.get_fn());
+        let res = create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 5);
+        assert!(res.is_err()); // Input Error
     }
 
     #[test]
@@ -404,6 +366,8 @@ mod tests {
         let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "3".to_string()),
+            GetInputVal::new(GetInputValType::Error, "".to_string()),
+            GetInputVal::new(GetInputValType::String, "4".to_string()),
         ];
         let provider = MockInputProvider::new(mock_inputs);
 
@@ -413,21 +377,37 @@ mod tests {
             Todo::new("third".to_string()),
         ]));
 
-        complete_todo_internal(todos.clone(), provider.get_fn());
+        let res = complete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, true);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first");
+        assert!(res.is_ok());
 
-        complete_todo_internal(todos.clone(), provider.get_fn());
+        let res = complete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(2).unwrap().completed, true);
         assert_eq!(todos.borrow().get(2).unwrap().text, "third");
+        assert!(res.is_ok());
+
+        let res = complete_todo_internal(todos.clone(), provider.get_fn());
+        assert_eq!(todos.borrow().len(), 3);
+        assert_eq!(todos.borrow().get(2).unwrap().completed, true);
+        assert_eq!(todos.borrow().get(2).unwrap().text, "third");
+        assert!(res.is_err()); // Input Error
+
+        let res = complete_todo_internal(todos.clone(), provider.get_fn());
+        assert_eq!(todos.borrow().len(), 3);
+        assert_eq!(todos.borrow().get(2).unwrap().completed, true);
+        assert_eq!(todos.borrow().get(2).unwrap().text, "third");
+        assert!(res.is_err()); // Selection Error
     }
 
     #[test]
     fn test_delete_todo() {
         let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "1".to_string()),
+            GetInputVal::new(GetInputValType::String, "2".to_string()),
+            GetInputVal::new(GetInputValType::Error, "".to_string()),
             GetInputVal::new(GetInputValType::String, "2".to_string()),
         ];
         let provider = MockInputProvider::new(mock_inputs);
@@ -438,7 +418,8 @@ mod tests {
             Todo::new("third".to_string()),
         ]));
 
-        delete_todo_internal(todos.clone(), provider.get_fn());
+        let res = delete_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
         assert_eq!(todos.borrow().len(), 2);
         assert!(todos
             .borrow()
@@ -449,7 +430,18 @@ mod tests {
             .iter()
             .any(|todo: &Todo| todo.text.eq("third")));
 
-        delete_todo_internal(todos.clone(), provider.get_fn());
+        let res = delete_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
+        assert_eq!(todos.borrow().len(), 1);
+        assert_eq!(todos.borrow().get(0).unwrap().text, "third");
+
+        let res = delete_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err()); // Input Error
+        assert_eq!(todos.borrow().len(), 1);
+        assert_eq!(todos.borrow().get(0).unwrap().text, "third");
+
+        let res = delete_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err()); // Selection Error
         assert_eq!(todos.borrow().len(), 1);
         assert_eq!(todos.borrow().get(0).unwrap().text, "third");
     }
@@ -467,6 +459,10 @@ mod tests {
             GetInputVal::new(GetInputValType::String, "C".to_string()),
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "C".to_string()),
+            GetInputVal::new(GetInputValType::Error, "".to_string()),
+            GetInputVal::new(GetInputValType::Error, "4".to_string()),
+            GetInputVal::new(GetInputValType::Error, "1".to_string()),
+            GetInputVal::new(GetInputValType::Error, "f".to_string()),
         ];
         let provider = MockInputProvider::new(mock_inputs);
 
@@ -476,22 +472,44 @@ mod tests {
             Todo::new("third".to_string()),
         ]));
 
-        edit_todo_internal(todos.clone(), provider.get_fn());
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited");
 
-        edit_todo_internal(todos.clone(), provider.get_fn());
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
 
-        edit_todo_internal(todos.clone(), provider.get_fn());
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, true);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
 
-        edit_todo_internal(todos.clone(), provider.get_fn());
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_ok());
+        assert_eq!(todos.borrow().len(), 3);
+        assert_eq!(todos.borrow().get(0).unwrap().completed, false);
+        assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
+
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err()); // Input Error
+        assert_eq!(todos.borrow().len(), 3);
+        assert_eq!(todos.borrow().get(0).unwrap().completed, false);
+        assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
+
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err()); // Selection Error
+        assert_eq!(todos.borrow().len(), 3);
+        assert_eq!(todos.borrow().get(0).unwrap().completed, false);
+        assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
+
+        let res = edit_todo_internal(todos.clone(), provider.get_fn());
+        assert!(res.is_err()); // Selection Error
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
