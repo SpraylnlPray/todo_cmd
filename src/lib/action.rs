@@ -1,7 +1,5 @@
 use crate::{todo::Todo, Todos};
-use std::{
-    io::{self, stdout, Write},
-};
+use std::io::{self, stdout, Write};
 
 pub enum Action {
     Create,
@@ -263,45 +261,45 @@ where
         }
     };
 
-    match todos.borrow_mut().get_mut(number - 1) {
-        Some(todo) => {
-            match input.as_str() {
-                "T" | "t" => {
-                    println!("Current text: {}", todo.text);
-                    print_input_label("Enter new text: ");
-                    match get_input() {
-                        Ok(input) => {
-                            todo.text = input;
-                            println!("Successfully updated TODO. New text: {}", todo.text);
-                            action_sleep();
-                            return;
-                        }
-                        Err(err) => {
-                            println!("Error reading input {err}, exit.");
-                            action_sleep();
-                            return;
-                        }
-                    };
-                }
-                "C" | "c" => {
-                    todo.completed = !todo.completed;
-                    println!(
-                        "Successfully toggled completed state. New state: {}",
-                        todo.completed
-                    );
-                    action_sleep();
-                    return;
-                }
-                _ => {
-                    println!("Invalid action");
-                    action_sleep();
-                }
-            };
-        }
+    let mut todos_ref = todos.borrow_mut();
+    let todo = match todos_ref.get_mut(number - 1) {
+        Some(todo) => todo,
         None => {
             println!("Failed to get TODO");
             action_sleep();
             return;
+        }
+    };
+    match input.as_str() {
+        "T" | "t" => {
+            println!("Current text: {}", todo.text);
+            print_input_label("Enter new text: ");
+            let input = match get_input() {
+                Ok(input) => input,
+                Err(err) => {
+                    println!("Error reading input {err}, exit.");
+                    action_sleep();
+                    return;
+                }
+            };
+
+            todo.text = input;
+            println!("Successfully updated TODO. New text: {}", todo.text);
+            action_sleep();
+        }
+
+        "C" | "c" => {
+            todo.completed = !todo.completed;
+            println!(
+                "Successfully toggled completed state. New state: {}",
+                todo.completed
+            );
+            action_sleep();
+            return;
+        }
+        _ => {
+            println!("Invalid action");
+            action_sleep();
         }
     };
 }
@@ -440,7 +438,6 @@ mod tests {
             GetInputVal::new(GetInputValType::String, "2".to_string()),
         ];
         let provider = MockInputProvider::new(mock_inputs);
-
 
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
