@@ -1,8 +1,6 @@
 use crate::{todo::Todo, Todos};
-use core::time;
 use std::{
     io::{self, stdout, Write},
-    thread::sleep,
 };
 
 pub enum Action {
@@ -43,6 +41,8 @@ impl From<String> for Action {
 
 #[cfg(not(test))]
 fn action_sleep() {
+    use core::time;
+    use std::thread::sleep;
     sleep(time::Duration::from_secs(1));
 }
 
@@ -51,7 +51,6 @@ fn action_sleep() {
     ()
 }
 
-#[cfg(not(test))]
 fn get_input() -> Result<String, std::io::Error> {
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
@@ -68,52 +67,15 @@ fn get_input() -> Result<String, std::io::Error> {
     }
 }
 
-#[cfg(test)]
-static mut GET_INPUT_RETVALS: Vec<GetInputVal> = Vec::new();
-static mut GET_INPUT_RETVALS_INDEX: usize = 0;
-
-#[cfg(test)]
-#[derive(PartialEq, Eq)]
-enum GetInputValType {
-    Error,
-    String,
-}
-
-#[cfg(test)]
-struct GetInputVal {
-    input_type: GetInputValType,
-    value: String,
-}
-#[cfg(test)]
-impl GetInputVal {
-    pub fn new(input_type: GetInputValType, value: String) -> Self {
-        Self { input_type, value }
-    }
-}
-
-#[cfg(test)]
-fn get_input() -> Result<String, std::io::Error> {
-    let input: &GetInputVal;
-    unsafe {
-        input = GET_INPUT_RETVALS.get(GET_INPUT_RETVALS_INDEX).unwrap();
-        GET_INPUT_RETVALS_INDEX = GET_INPUT_RETVALS_INDEX + 1;
-    }
-
-    if input.input_type == GetInputValType::Error {
-        return Err(std::io::Error::new(
-            io::ErrorKind::InvalidInput,
-            input.value.clone(),
-        ));
-    }
-    return Ok(String::from(input.value.clone()));
-}
-
 fn print_input_label(label: &str) {
     print!("{label}");
     let _ = stdout().flush(); // This is necessary, otherwise the text appears after the next println
 }
 
-pub fn action_list_todos(todos: Todos) {
+fn list_todos_internal<F>(todos: Todos, mut get_input: F)
+where
+    F: FnMut() -> Result<String, std::io::Error>,
+{
     println!("Your TODO list:\n");
     for todo in todos.borrow().iter() {
         println!("completed: {} | text: {}", todo.completed, todo.text);
@@ -123,8 +85,14 @@ pub fn action_list_todos(todos: Todos) {
     println!("Press enter key to return");
     let _ = get_input();
 }
+pub fn list_todos(todos: Todos) {
+    list_todos_internal(todos, get_input);
+}
 
-pub fn action_create_todo(todos: Todos) {
+fn create_todo_internal<F>(todos: Todos, mut get_input: F)
+where
+    F: FnMut() -> Result<String, std::io::Error>,
+{
     print_input_label("Enter new TODO: ");
     let input = match get_input() {
         Ok(input) => input,
@@ -141,8 +109,14 @@ pub fn action_create_todo(todos: Todos) {
     println!("Successfully added new todo!");
     action_sleep();
 }
+pub fn create_todo(todos: Todos) {
+    create_todo_internal(todos, get_input);
+}
 
-pub fn action_complete_todo(todos: Todos) {
+fn complete_todo_internal<F>(todos: Todos, mut get_input: F)
+where
+    F: FnMut() -> Result<String, std::io::Error>,
+{
     println!("Your TODO list:\n");
     for (i, todo) in todos.borrow().iter().enumerate() {
         println!(
@@ -187,8 +161,14 @@ pub fn action_complete_todo(todos: Todos) {
     }
     action_sleep();
 }
+pub fn complete_todo(todos: Todos) {
+    complete_todo_internal(todos, get_input);
+}
 
-pub fn action_delete_todo(todos: Todos) {
+fn delete_todo_internal<F>(todos: Todos, mut get_input: F)
+where
+    F: FnMut() -> Result<String, std::io::Error>,
+{
     println!("Your TODO list:\n");
     for (i, todo) in todos.borrow().iter().enumerate() {
         println!(
@@ -229,8 +209,14 @@ pub fn action_delete_todo(todos: Todos) {
     println!("Successfully delete TODO.");
     action_sleep();
 }
+pub fn delete_todo(todos: Todos) {
+    delete_todo_internal(todos, get_input);
+}
 
-pub fn action_edit_todo(todos: Todos) {
+fn edit_todo_internal<F>(todos: Todos, mut get_input: F)
+where
+    F: FnMut() -> Result<String, std::io::Error>,
+{
     println!("Your TODO list:\n");
     for (i, todo) in todos.borrow().iter().enumerate() {
         println!(
@@ -320,82 +306,128 @@ pub fn action_edit_todo(todos: Todos) {
     };
 }
 
-// NOTE: These tests must be run with --test-threads=1!
+pub fn edit_todo(todos: Todos) {
+    edit_todo_internal(todos, get_input);
+}
+
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
     use std::{cell::RefCell, sync::Arc};
     // TODO: test error cases when error handling is implemented
-
     use super::*;
 
-    fn setup_get_input(inputs: Vec<GetInputVal>) {
-        unsafe {
-            GET_INPUT_RETVALS_INDEX = 0;
-            GET_INPUT_RETVALS = inputs;
+    struct MockInputProvider {
+        inputs: Rc<RefCell<Vec<GetInputVal>>>,
+    }
+
+    impl MockInputProvider {
+        pub fn new(inputs: Vec<GetInputVal>) -> Self {
+            Self {
+                inputs: Rc::new(RefCell::new(inputs)),
+            }
+        }
+
+        // Returns a function that returns the inputs passed to `new`
+        pub fn get_fn(&self) -> impl FnMut() -> Result<String, std::io::Error> {
+            let inputs = self.inputs.clone();
+            move || {
+                let mut queue = inputs.borrow_mut();
+                if queue.is_empty() {
+                    panic!("No more mock inputs available!")
+                }
+                let input = queue.remove(0);
+                match input.input_type {
+                    GetInputValType::Error => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        input.value.clone(),
+                    )),
+                    GetInputValType::String => Ok(input.value.clone()),
+                }
+            }
+        }
+    }
+
+    #[derive(PartialEq, Eq)]
+    enum GetInputValType {
+        Error,
+        String,
+    }
+
+    struct GetInputVal {
+        input_type: GetInputValType,
+        value: String,
+    }
+    impl GetInputVal {
+        pub fn new(input_type: GetInputValType, value: String) -> Self {
+            Self { input_type, value }
         }
     }
 
     #[test]
     fn test_list_todos() {
-        let vals = vec![GetInputVal::new(GetInputValType::String, "Foo".to_string())];
-        setup_get_input(vals);
+        let mock_inputs = vec![GetInputVal::new(GetInputValType::String, "".to_string())];
+        let provider = MockInputProvider::new(mock_inputs);
+
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
             Todo::new("second".to_string()),
             Todo::new("third".to_string()),
         ]));
 
-        action_list_todos(todos.clone());
+        list_todos_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
     }
 
     #[test]
     fn test_create_todo() {
-        let vals = vec![
+        let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "Foo".to_string()),
             GetInputVal::new(GetInputValType::String, "Bar".to_string()),
             GetInputVal::new(GetInputValType::Error, "".to_string()),
         ];
-        setup_get_input(vals);
+        let provider = MockInputProvider::new(mock_inputs);
+
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
             Todo::new("second".to_string()),
             Todo::new("third".to_string()),
         ]));
 
-        action_create_todo(todos.clone());
+        create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 4);
         assert_eq!(todos.borrow().get(3).unwrap().completed, false);
         assert_eq!(todos.borrow().get(3).unwrap().text, "Foo");
 
-        action_create_todo(todos.clone());
+        create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 5);
         assert_eq!(todos.borrow().get(4).unwrap().completed, false);
         assert_eq!(todos.borrow().get(4).unwrap().text, "Bar");
 
-        action_create_todo(todos.clone());
+        create_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 5);
     }
 
     #[test]
     fn test_complete_todo() {
-        let vals = vec![
+        let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "3".to_string()),
         ];
-        setup_get_input(vals);
+        let provider = MockInputProvider::new(mock_inputs);
+
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
             Todo::new("second".to_string()),
             Todo::new("third".to_string()),
         ]));
 
-        action_complete_todo(todos.clone());
+        complete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, true);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first");
 
-        action_complete_todo(todos.clone());
+        complete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(2).unwrap().completed, true);
         assert_eq!(todos.borrow().get(2).unwrap().text, "third");
@@ -403,18 +435,20 @@ mod tests {
 
     #[test]
     fn test_delete_todo() {
-        let vals = vec![
+        let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "2".to_string()),
         ];
-        setup_get_input(vals);
+        let provider = MockInputProvider::new(mock_inputs);
+
+
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
             Todo::new("second".to_string()),
             Todo::new("third".to_string()),
         ]));
 
-        action_delete_todo(todos.clone());
+        delete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 2);
         assert!(todos
             .borrow()
@@ -425,14 +459,14 @@ mod tests {
             .iter()
             .any(|todo: &Todo| todo.text.eq("third")));
 
-        action_delete_todo(todos.clone());
+        delete_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 1);
         assert_eq!(todos.borrow().get(0).unwrap().text, "third");
     }
 
     #[test]
     fn test_edit_todo() {
-        let vals = vec![
+        let mock_inputs = vec![
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "T".to_string()),
             GetInputVal::new(GetInputValType::String, "first edited".to_string()),
@@ -444,29 +478,30 @@ mod tests {
             GetInputVal::new(GetInputValType::String, "1".to_string()),
             GetInputVal::new(GetInputValType::String, "C".to_string()),
         ];
-        setup_get_input(vals);
+        let provider = MockInputProvider::new(mock_inputs);
+
         let todos: Todos = Arc::new(RefCell::new(vec![
             Todo::new("first".to_string()),
             Todo::new("second".to_string()),
             Todo::new("third".to_string()),
         ]));
 
-        action_edit_todo(todos.clone());
+        edit_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited");
 
-        action_edit_todo(todos.clone());
+        edit_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
 
-        action_edit_todo(todos.clone());
+        edit_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, true);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");
 
-        action_edit_todo(todos.clone());
+        edit_todo_internal(todos.clone(), provider.get_fn());
         assert_eq!(todos.borrow().len(), 3);
         assert_eq!(todos.borrow().get(0).unwrap().completed, false);
         assert_eq!(todos.borrow().get(0).unwrap().text, "first edited again");

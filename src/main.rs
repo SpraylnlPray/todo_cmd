@@ -1,10 +1,10 @@
 use std::{
-    cell::RefCell, io::{self, stdout, Write}, process::exit, sync::Arc
+    cell::RefCell,
+    io::{self, stdout, Write},
+    process::exit,
+    sync::Arc,
 };
-use todolib::{
-    action::{action_complete_todo, action_create_todo, action_delete_todo, action_edit_todo, action_list_todos, Action},
-    Todos,
-};
+use todolib::{action, action::Action, Todos};
 
 fn main() {
     let todos: Todos = Arc::new(RefCell::new(Vec::new()));
@@ -45,11 +45,11 @@ fn main() {
 
         let action = Action::from(buffer);
         match action {
-            Action::Create => action_create_todo(todos.clone()),
-            Action::Edit => action_edit_todo(todos.clone()),
-            Action::Delete => action_delete_todo(todos.clone()),
-            Action::List => action_list_todos(todos.clone()),
-            Action::Complete => action_complete_todo(todos.clone()),
+            Action::Create => action::create_todo(todos.clone()),
+            Action::Edit => action::edit_todo(todos.clone()),
+            Action::Delete => action::delete_todo(todos.clone()),
+            Action::List => action::list_todos(todos.clone()),
+            Action::Complete => action::complete_todo(todos.clone()),
             Action::Exit => {
                 println!("Exiting, Bye!");
                 exit(0);
