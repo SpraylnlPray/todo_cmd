@@ -1,15 +1,43 @@
 use std::{
-    cell::RefCell, io::{self, stdout, Write}, process::exit, sync::Arc
+    cell::RefCell,
+    fs::File,
+    io::{self, stdout, BufReader, Error, Write},
+    process::exit,
+    sync::Arc,
 };
-use todolib::{action::{self, Action}, errors::SelectionError, todo::Todo, Todos};
+use todolib::{
+    action::{self, Action},
+    errors::SelectionError,
+    todo::Todo,
+    Todos,
+};
+
+fn store(todos: Todos) -> Result<(), Error>  {
+    let json = serde_json::to_string(&*todos.clone().borrow())?;
+    std::fs::write("todos.json", json)?;
+    return Ok(());
+}
+
+fn load() -> std::io::Result<Todos> {
+    let todos: Todos = Arc::new(RefCell::new(Vec::new()));
+    let file = File::open("todos.json")?;
+    let buf_reader = BufReader::new(file);
+    let mut todos_temp: Vec<Todo> = serde_json::from_reader(buf_reader)?;
+    todos.borrow_mut().append(&mut todos_temp);
+    return Ok(todos);
+}
 
 fn main() {
-    let todos: Todos = Arc::new(RefCell::new(vec![
-        Todo::new("first".to_string()),
-        Todo::new("second".to_string()),
-        Todo::new("third".to_string()),
-    ]));
-    loop {
+    let mut exit_app = false;
+    let todos: Todos = match load() {
+        Ok(todos) => todos,
+        Err(err) => {
+            println!("Error loading data from file: {}", err.to_string());
+            Arc::new(RefCell::new(Vec::new()))
+        }
+    };
+
+    while !exit_app {
         std::process::Command::new("cmd")
             .args(&["/C", "cls"])
             .status()
@@ -52,13 +80,20 @@ fn main() {
             Action::List => action::list_todos(todos.clone()),
             Action::Complete => action::complete_todo(todos.clone()),
             Action::Exit => {
-                println!("Exiting, Bye!");
-                std::process::exit(0);
-            },
+                exit_app = true;
+                Ok(())
+            }
             Action::Invalid => Err(SelectionError("Invalid Selection".to_string()).into()),
         } {
             println!("{}", err.to_string());
             std::thread::sleep(core::time::Duration::from_secs(1));
         }
     }
+
+    println!("Storing to file....");
+    if let Err(err) = store(todos) {
+        println!("Error storing data to file: {}", err.to_string());
+    }
+    println!("Exiting, Bye!");
+    std::process::exit(0);
 }

@@ -7,10 +7,9 @@ use std::io::{self, stdout, Write};
 
 /*
     Open Points:
-    - Saving to File
-    - Loading from File
     - Platform handling for screen clearing
     - Nicer display for TODOs
+    - Cleanup of main
 */
 
 pub enum Action {
