@@ -3,11 +3,6 @@ use crate::{
 };
 use std::io::{stdout, Write};
 
-/*
-    Open Points:
-    - Nicer display for TODOs
-*/
-
 pub enum Action {
     Create,
     Edit,
