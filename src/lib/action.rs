@@ -1,15 +1,11 @@
 use crate::{
-    errors::{ApplicationError, SelectionError},
-    todo::Todo,
-    Todos,
+    errors::{ApplicationError, SelectionError}, get_input, todo::Todo, Todos
 };
-use std::io::{self, stdout, Write};
+use std::io::{stdout, Write};
 
 /*
     Open Points:
-    - Platform handling for screen clearing
     - Nicer display for TODOs
-    - Cleanup of main
 */
 
 pub enum Action {
@@ -58,22 +54,6 @@ fn action_sleep() {
 #[cfg(test)]
 fn action_sleep() {
     ()
-}
-
-fn get_input() -> Result<String, std::io::Error> {
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(_) => {
-            if let Some('\n') = input.chars().next_back() {
-                input.pop();
-            }
-            if let Some('\r') = input.chars().next_back() {
-                input.pop();
-            }
-            return Ok(input);
-        }
-        Err(err) => Err(err),
-    }
 }
 
 fn print_input_label(label: &str) {
@@ -172,7 +152,7 @@ where
     }
     println!();
 
-    print_input_label("Enter TODO to complete: ");
+    print_input_label("Enter TODO to delete: ");
     let input = get_input()?;
 
     let number = input.parse::<usize>()?;
@@ -206,7 +186,7 @@ where
     }
     println!();
 
-    print_input_label("Enter TODO to complete: ");
+    print_input_label("Enter TODO to edit: ");
     let input = get_input()?;
 
     let number = input.parse::<usize>()?;
